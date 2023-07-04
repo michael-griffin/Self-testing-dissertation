@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>My experiment</title>
+	<script src="jspsych-6.0.2/jspsych.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-html-keyboard-response.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-html-keyboard-new.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-html-slider-response.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-html-slider-new.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-survey-text.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-survey-new.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-instructions.js"></script>
+	<link href="jspsych-6.0.2/css/jspsych.css" rel="stylesheet" type="text/css"></link>
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+</head>
+<body></body>
+
+<div id="daybutton">
+	<label><b>Welcome to Day 2 of the experiment.</b></label>
+	<label><input type="radio" name="day" value="2" id="daytwo" onclick="daytwoclick()" /> Day 2</label>
+</div>
+
+<div id="IDfield">
+	Subject Number: <input type="text" id="subnum" value="">
+	<br><br>
+</div>
+
+<button onclick="gotoexp()">Continue</button>
+
+<div id="warning">
+	<p></p>
+</div>
+
+<script type="text/javascript" language = "javascript">
+document.getElementById("IDfield").style.visibility = "hidden";
+var subID; //must declare it globally, so that when the experiment runs it can still access.
+function dayoneclick() {
+	document.getElementById("IDfield").style.visibility = "hidden";
+}
+function daytwoclick() {
+	document.getElementById("IDfield").style.visibility = "visible";
+}
+
+function gotoexp() {
+	var days = document.getElementsByName('day');
+	var day;
+	for(var i = 0; i < days.length; i++){
+		if(days[i].checked){
+			day = days[i].value;
+		}
+	}
+	
+	subID = document.getElementById("subnum").value;
+	
+	if (day == 1){
+		start_exp();
+	} else if (day == 2 && (subID.length < 4 || subID.length > 4)){
+		document.getElementById("warning").innerHTML = 'Please enter a subject number that is 4 digits long.';
+		//start_exp();
+	} else if (day == 2 && subID.length == 4) {
+		start_exp();
+		//readandcheck('subjects.txt'); //updates substring and subarray.
+		
+		//After reading data, check if subject matches and enough time has passed.
+		//will have to get index of matching sub number. 		
+		//$.when(readData('subjects.txt')).then(checksub);
+	}
+}	
+
+//calls checksub. Figuring out how when works would be more elegant. 
+function readandcheck(name){
+	$.ajax({
+	type: "POST",
+	url: "http://labs.psychology.illinois.edu/~asbenjam/Griffin/Learning/read_data.php",
+	data: {
+	"filename": name
+	},
+	success: function(response){
+		var substring = response;
+		var numarray = substring.split(',').map(Number);
+		console.log("Subject Array is: " + numarray);
+		checksub(numarray);
+	}})
+}
+
+
+
+function checksub(subarray){
+	//Report subarray, which should be updated in readData and is required here.
+	console.log(subarray);
+
+	let subn = document.getElementById("subnum").value;
+	subn = Number(subn);
+	console.log('Subject N: ' + subn); //subn is still a string.
+	
+	//needed for findIndex function.
+	function subnmatch(asub){
+		return subn == asub;
+	}
+	let index = subarray.findIndex(subnmatch);
+	
+	//If you can't find subject, display warning message and exit.
+	if (index == -1) {
+		document.getElementById("warning").innerHTML = '<br>Unable to find that subject number. ' + 
+		'Please double check to make sure it was entered correctly, then refresh the page and try again. ' +
+		'<br>If you are still having problems, you can email the experimenter at ' + 
+		'<br>' + 'mgriffn2@illinois.edu';
+		return;
+	}
+	
+
+	let dayold = subarray[index+1];
+	let hoursold = subarray[index+2];
+
+	let ctime = new Date();
+	let daynew = ctime.getDay();
+	let hoursnew = ctime.getHours();
+	
+	let timediff = daynew - dayold;
+	if (timediff < 0) {
+		timediff = timediff + 7;
+	}
+	timediff = timediff * 24;
+	timediff = timediff + (hoursnew - hoursold);
+
+	//Actual Check
+	if (timediff < 18) {
+		let timetilgood = String(18 - timediff + 1);
+		document.getElementById("warning").innerHTML = '<br>To start part 2, at least 18 hours must have passed ' +
+		'since finishing part 1. You should be able to access part 2 in <br>' + 
+		'<b>' + timetilgood + '</b> hours.';
+	} else if (timediff > 40) {
+		document.getElementById("warning").innerHTML = '<br>You are no longer eligible to participate in part 2 ' + 
+		'because over 40 hours have passed since you completed part 1. ' +
+		'<br>If you think this message is in error, please email the experimenter at ' + 
+		'<br>' + 'mgriffn2@illinois.edu';
+	} else {
+		//Start the damn experiment.
+		start_exp();
+	}
+}
+
+</script>
+
+<script>
+function start_exp(){
+	/*A few pieces to learn here. General form of the experiment should be:
+		
+
+	Something kind of miserable is that I can't easily stop the experiment midway, calculate some stuff, then resume
+	the next block of trials. To do so, I'm basically going to have to build a kind of russian doll structure of a
+	timeline that uses on_finish to start the next function, which has its own timeline, etc. Bleh.
+
+	*/
+	
+	var timeline = []; //used for instructions
+
+	//var timelinerestudy = []; //used for restudy phase, now initialized in run_restudy.
+	
+	var stimstyle = '<p style="color: black; font-size: 22px; ">'; //font-weight: bold; default text size is 20.
+	var instructstyle = '<div style="width: 800px;">' +
+		'<div style= "margin: 50px";>' +
+		'<div style="text-align: left;">';
+
+	//Trisha just entered wordlist raw. Ugly, especially since they're paired, but doable.
+	var word1list = ["chicken", "port", "prison", "rock", "replace", "link", "caring",
+	"biology", "copy", "process", "bullet", "mill", "anger", "visit", "capital", "shrink",
+	"nerve", "pea", "fan", "remind", "bacon", "bleach", "climax", "date", "bias", "calf",
+	"fee", "want", "need", "knock", "plant", "find", "smother", "pork", "glue", "grip",
+	"forest", "banner", "collect", "risk"];
+	var word2list = ["beet", "cinema", "loaf", "milk", "roach", "crisis", "skirt", "temper",
+	"bedroom", "joker", "walkway", "feast", "decay", "glove", "figure", "mafia", "bumper",
+	"bathtub", "feature", "foam", "feud", "ruin", "saucer", "laugh", "sirloin", "annoy",
+	"chowder", "ascent", "faucet", "otter", "worm", "clown", "surgery", "emperor", "force",
+	"beach", "knob", "glide", "loyalty", "zero"];
+
+	var days = document.getElementsByName('day');
+	var day;
+	for(var i = 0; i < days.length; i++){
+		if(days[i].checked){
+			day = days[i].value;
+		}
+	}
+
+	
+	var pilot = 0;
+	//var day = 1;
+
+	if (pilot == 1) {
+		var instructpause = 0;
+		var prestime = 1500;
+		var ntrials = 4;
+	} 
+	else {
+		var instructpause = 500;
+		var prestime = 3000;
+		var ntrials = word1list.length;
+	}
+
+
+	var zeroto = []; //used when shuffling order.
+	for (var n = 0; n < ntrials; n++){
+		zeroto.push(n);
+	}
+	var emptarr = Array.from({length: ntrials}); //used in restudy.
+
+
+	//Grabbed from stack overflow. 
+	function shuffle(array) {
+		for (var i = array.length - 1; i > 0; i--) {
+			var j = Math.floor(Math.random() * (i + 1));
+			var temp = array[i];
+			array[i] = array[j];
+			array[j] = temp;
+		}
+		return array; //could skip. As is, usage is a = shuffle(a);, without, would be just shuffle(a);
+	}
+
+	if (day == 1) {
+		var subn = Math.round(Math.random()*8999) + 1000; //Generate a random subject number that participants have to enter.
+		subID = String(subn);
+		
+		var studylist = {
+			word1: [],
+			word2: [],
+			jol: [], //to be populated in the trial procedure
+			jolrt: [],
+			jolrtfirst: [], //when they first touch the slider.
+		}
+
+		var ordershuffled = zeroto.slice();
+		ordershuffled = shuffle(ordershuffled);
+
+		for (n = 0; n < ordershuffled.length; n++){
+			let index = ordershuffled[n];
+			studylist.word1.push(word1list[index]);
+			studylist.word2.push(word2list[index]);
+			//JOL values are pushed in as trials are completed.
+		}
+		
+		
+		
+		//instructions use a different plug in from trials. html-keyboard-new.
+		//This has an additional parameter: min_time, or the time that the stimulus stays on screen
+		//before a response is accepted.
+		//instructions
+		presscontinue = "<br><br><br>Press any key to continue.";
+		
+		var instructions_first = {
+			type: 'html-keyboard-new',
+			stimulus: instructstyle + 
+			"In this experiment, you will study a series of word pairs that you need to learn " +
+			"for an upcoming memory test." + 
+			
+			"<br><br>You will take the test when you return tomorrow. On the test, I'll give you the top " +
+			"word and your job is to remember the bottom word." +
+			
+			"<br><br>After studying the list, you'll have an opportunity to get more practice on the words in those lists."+
+			presscontinue,
+			min_time: instructpause
+			
+		};
+		timeline.push(instructions_first);
+
+		var instructions_second = {
+			type: 'html-keyboard-new',
+			stimulus: instructstyle + 
+			"For each word pair you will have several seconds to initially study it. " +
+			"After studying each word pair, you'll need to estimate how likely you are to remember " +
+			"the right word when given the left word on tomorrow's test." +
+			
+			"<br><br>On this scale, you can choose 1 if you think there is absolutely no chance that you will successfully " + 
+			"remember this word pair. You can choose 100 if you are certain you will be able to remember this pair. " +
+			"And of course, you can choose anything in between." +
+			presscontinue,
+			min_time: instructpause
+		};
+		timeline.push(instructions_second);
+
+		var instructions_third = {
+			type: "html-keyboard-new",
+			stimulus: "Press any key when you're ready to begin the experiment.", //no CSS, want text-align centered.
+			min_time: instructpause
+		}
+		timeline.push(instructions_third);
+
+
+
+
+
+		// Stimulus is tricky. Need to display instructions, word-pair from trial, and JOL response getter thing.
+		//form is either one large var with the whole timeline + a reference to the array, or broken up into several variables for all three.
+		//For now, trying one large on assumption that we only need to collect one response.
+		
+		var ctrial = 0;
+		
+		//Because I am bad at coding. html-keyboard-new seems to override the typical jsPsych.No_KEYS
+		//and response_end_trial: false behavior. So using keyboard response to display things for a fixed time.
+		//keyboard-new to display things for a minimum time.
+		var studytrial = {
+			type: 'html-keyboard-response',
+			stimulus: ' ',
+			choices: jsPsych.No_KEYS, //could comment out. Trial duration+prestime is enough.
+			trial_duration: prestime,
+			response_ends_trial: false,
+			on_start: function(trial) {
+				trial.stimulus = stimstyle + 
+				studylist.word1[ctrial] + '<br><br>' + studylist.word2[ctrial] + '</p>';
+			}
+		}
+
+		var joljudge = {
+			type: "html-slider-new",
+			stimulus: " ",
+			labels: ['1', '100'],
+			min: 1, //default is from 0 to 100.
+			max: 100,
+			prompt: '<p>How well did you learn this?</p>',
+			on_start: function(trial) {
+				trial.stimulus = stimstyle + 
+				studylist.word1[ctrial] + '<br><br>' + studylist.word2[ctrial] + '</p>';
+			},
+			on_finish: function(data){
+				studylist.jol.push(data.response);  
+				studylist.jolrt.push(data.rt/1000);
+				studylist.jolrtfirst.push(data.rtfirst/1000);
+				ctrial = ctrial+1;
+			}
+		}
+
+		//jsPsych.data.addDataToLastTrial({subject: subn, jol: jolresp, RTstart: startRT, RTend: endRT, trial: n});
+
+
+		var present_study = {
+			timeline: [studytrial, joljudge],
+			loop_function: function(){
+				if(ctrial < ntrials){
+					return true;
+				} else {
+					return false;
+				}
+			}
+		}
+
+		timeline.push(present_study);
+
+		//
+		//RESTUDY PHASE SET UP
+
+
+		//javascript's sort function doesn't immediately work on numbers..
+		//have to add this in.
+		function sortnum(a,b) {
+			return a - b;
+		}
+
+		//find where in an array a value shows up.
+		function getindexes(arr, val) {
+			var indexes = [], i;
+			for(i = 0; i < arr.length; i++)
+				if (arr[i] === val)
+					indexes.push(i);
+			return indexes;
+		}
+
+		//JOL looks like its working, which is nice. Currently restudy is running fine too. Just need to add
+		//a saving function to it. 
+		//NEEDS TO BE A FUNCTION, SO THAT IT CAN BE CALLED ON_FINISH. Otherwise, jols won't be available yet.
+		function run_restudy(studylist){
+			
+			var timelinerestudy = [];
+			
+			var instructions = {
+				type: "html-keyboard-new",
+				stimulus: instructstyle + 
+				"The practice phase is about to begin. " +
+				
+				"<br><br>Some of the word pairs will be shown again for you to restudy for tomorrow's test. " + 
+				
+				"<br><br>For others, only the left word will be shown, " +
+				"and you'll need to retrieve the other. If you're unsure, it's okay to guess. " +
+				"If you've tried but still can't remember the right word, you can enter SKIP " +
+				"to move onto the next word pair." +
+				presscontinue,
+				min_time: instructpause
+			}
+			timelinerestudy.push(instructions);
+
+			
+			
+			var jols = studylist.jol.slice();
+			var	jolsort = jols.slice(); //duplicates array (slices out the full array). Needed as otherwise just creates pointer.
+			jolsort = jolsort.sort(sortnum);
+			var praccond = emptarr.slice();
+			var indexes = emptarr.slice();
+
+
+			for (n = 0; n < jols.length; n++){
+				let cjolind = getindexes(jols, jolsort[n]) 
+				let firsttime = getindexes(jolsort, jolsort[n])
+				
+				if (firsttime[0] == n) {
+					firsttime = 1;
+				} else {
+					firsttime = 0;
+				}
+				if (firsttime == 1){
+					for (var o = 0; o < cjolind.length; o++){
+						praccond[cjolind[o]] = (n+o)%2; //might need n+o+subadj
+					}
+				}
+				indexes[n] = jols.indexOf(jolsort[n])
+			}
+
+			///////////////
+			//RESTUDY PHASE
+
+			var restudylist = {
+				word1: emptarr.slice(),
+				word2: emptarr.slice(),
+				jol: emptarr.slice(),
+				jolrt: emptarr.slice(),
+				jolrtfirst: emptarr.slice(),
+				condition: emptarr.slice(),
+				response: [], //elements will be pushed in. can't specify size ahead of time easily.
+				rt: [],
+				rtfirst: []
+			};
+
+			var ordershuffledtwo = zeroto.slice();
+			ordershuffledtwo = shuffle(ordershuffledtwo);
+
+			for (n = 0; n < ntrials; n++){
+				let index = ordershuffledtwo[n];
+				restudylist.word1[n] = studylist.word1[index];
+				restudylist.word2[n] = studylist.word2[index];
+				restudylist.jol[n] = studylist.jol[index];
+				restudylist.jolrt[n] = studylist.jolrt[index];
+				restudylist.jolrtfirst[n] = studylist.jolrt[index];
+				restudylist.condition[n] = praccond[index];
+			}
+
+			var trial = {};
+			for (n = 0; n < ntrials; n++) {
+				let cond = restudylist.condition[n];
+				
+				if (cond == 0) {
+					let ctype = 'html-keyboard-response';
+					let cstim = restudylist.word1[n] + "<br><br>" + restudylist.word2[n];
+					trial = {
+						type: ctype,
+						stimulus: stimstyle + cstim + '</p>',
+						choices: jsPsych.NO_KEYS,
+						trial_duration: prestime,
+						response_ends_trials: false,
+						on_finish: function(data){
+							restudylist.response.push("-");
+							restudylist.rt.push(-99);
+							restudylist.rtfirst.push(-99);
+						}
+					}
+				} else {
+					let ctype = 'survey-new';
+					let cstim = restudylist.word1[n];
+					trial = {
+						type: ctype,
+						disp: stimstyle + cstim + '</p>',
+						on_finish: function(data){
+							//survey text response adds additional characters such as Ques. #, etc. Below trims.
+							//let rawresponse = data.responses;
+							//rawresponse = rawresponse.slice(7, rawresponse.length-2); 
+							restudylist.response.push(data.response); 
+							restudylist.rt.push(data.rt/1000);
+							restudylist.rtfirst.push(data.rtfirst/1000);
+						}
+					}
+				}
+				timelinerestudy.push(trial);
+			}
+			jsPsych.init({
+				timeline: timelinerestudy,
+				on_finish: function(){
+					console.log('ID test1 run_restudy' + subID);
+					//console.log('ID test2 run_restudy' + document.getElementById("subnum").value);
+					
+					
+					var studylistcsv = prepdata(studylist);
+					console.log(studylistcsv);
+
+					var filename = 'data/' + 'study_' + subID + '.txt';
+					savedata(filename, studylistcsv);
+					
+					
+					var restudylistcsv = prepdata(restudylist);
+					console.log(restudylistcsv);
+
+					var filename = 'data/' + 'restudy_' + subID + '.txt';
+					savedata(filename, restudylistcsv);
+					
+					var filename = 'subjects.txt';
+					var thedate = new Date();
+					var hours = thedate.getHours();
+					var today = thedate.getDay(); 
+					var datastring = String(subn + ',' + today + ',' + hours + ',');
+					savedata(filename, datastring);
+					
+					debrief_study(); //after saving, run debrief.
+				}
+			})
+		}
+
+		function debrief_study() {
+			var debrief = {
+				//Trisha did this with type: instructions. I'm not sure which would be easier to format.
+			
+				type: 'html-keyboard-new',
+				stimulus:[instructstyle + 
+				'The first day is complete!' +
+				
+				'<br>' + 
+				'<p style="font-size: 52px; text-align: center;">' + subn + '<br>' + 
+				'<p style="font-size: 26px; text-align: left;">' + 'This is your <b>Subject Number</b>. ' + 
+				'Please WRITE THIS DOWN. you will not be able to start Day 2 without it.' +
+				
+				'<br>' + '<p style="font-size: 20px; ">' +
+				'When you return for part 2 tomorrow, you will need to enter your Subject Number to begin. ' + 
+				'Part 2 will be accessed using the same link as today, ' +
+				'but when you initially load this page be sure to select Day 2.' +
+				'<br><br>' + 
+				
+				'Please copy and paste this sequence to Mechanical Turk in order to get credit.' +
+				'<br>'+'<p style="text-align: center; font-size: 20px;">' + subn + '_' + 'J7CL2' +
+				'<br><br>' +
+				
+				"It's safe to exit this window."
+				],
+				choices: jsPsych.NO_KEYS,
+			};
+			
+			jsPsych.init({
+				timeline: [debrief]
+			})
+		}
+
+
+		//jsPsych.data.displayData();
+		jsPsych.init({
+			timeline: timeline,
+			on_finish: function() {
+				console.log('Sub N: ' + subID);
+				console.log('finished study phase');
+				run_restudy(studylist);
+			}
+		});
+	}
+	else { //if day == 2
+		
+		
+		var ordershuffled = zeroto.slice();
+		ordershuffled = shuffle(ordershuffled);
+		
+		var testlist = {
+			word1: [],
+			word2: [],
+			jol: [],
+			jolrt: [],
+			jolrtfirst: [],
+			condition: [],
+			response: [], //elements will be pushed in. can't specify size ahead of time easily.
+			rt: [],
+			rtfirst: []
+		};
+		
+		for (n = 0; n < ordershuffled.length; n++){
+			let index = ordershuffled[n];
+			testlist.word1.push(word1list[index]);
+			testlist.word2.push(word2list[index]);
+			testlist.jol.push(-9); //set default value so we can see it's overwritten when we tie day 1 and day 2 data.
+			testlist.jolrt.push(-9); //same as above.
+			testlist.jolrtfirst.push(-9);
+			testlist.condition.push(-1);
+		}
+	
+		var instructions_daytwo = {
+			type: "html-keyboard-new",
+			stimulus: instructstyle + 
+			"Welcome to Day 2 of the experiment. Today, you'll be tested on the word pairs you learned " +
+			"previously. For each pair, you'll be given the left word, and need to type the right word." +
+			
+			"<br><br>If you're unsure of what the word was, it's okay to guess. If you've tried but still can't " + 
+			"remember the right word, you can enter <b>SKIP</b> to move onto the next word pair." +
+		
+			"<br><br>Press any key to begin the test.",
+			min_time: instructpause
+		};
+		timeline.push(instructions_daytwo);
+		
+		
+		for (n = 0; n < ntrials; n++){
+			let cstim = testlist.word1[n];
+			trial = {
+				type: 'survey-new',
+				disp: stimstyle + cstim + '</p>',
+				on_finish: function(data){
+					//survey text response adds additional characters such as Ques. #, etc. Below trims.
+					testlist.response.push(data.response); 
+					testlist.rt.push(data.rt/1000);
+					testlist.rtfirst.push(data.rtfirst/1000);
+				}
+			}
+			timeline.push(trial);
+		}
+		
+		function debrief_test() {
+			var debrief = {
+				//Trisha did this with type: instructions. I'm not sure which would be easier to format.
+			
+				type: 'html-keyboard-new',
+				stimulus:[instructstyle + 
+				'Thank you for your participation. <b>Please enter code ' + subID + '_' + 
+				'H11195 into Amazon Mechanical Turk for compensation</b>' +
+				
+				'<br><br>' + 
+				'In this experiment, you studied several lists of word pairs and judged how well you learned them,' +
+				'then had some additional practice on each word before taking a final memory test. ' +
+				'Past research has often found that testing actually leads to better memory than restudying;' +
+				'however, this benefit might depend on how well you know the item initially.' +
+				
+				'<br><br>This experiment looks at whether this advantage for self-testing varies depending ' +
+				'on what judgment of learning you gave initially. Our hypothesis was that, ' + 
+				'the better learned it was initially, the larger the advantage for self testing: ' +
+				"when you don't know an item well, it's quite difficult to successfully recall an item " +
+				'when tested, so restudying may be more helpful. For well learned items, however, ' +
+				'you should be able to consistently retrieve them, and gain the typical self-testing advantage.' +
+				
+				'<br><br>Thanks again for participating!' +
+				'<p>Once you have entered the code on MTurk, it is safe to exit this window.</p>'
+				],
+				choices: jsPsych.NO_KEYS,
+			};
+			
+			jsPsych.init({
+				timeline: [debrief]
+			})
+		}
+		
+		jsPsych.init({
+			timeline: timeline,
+			on_finish: function() {
+				console.log('finished test phase');
+				var testlistcsv = prepdata(testlist);
+				console.log(testlistcsv);
+				
+				
+				
+				var filename = 'data/test_' + subID + '.txt';
+				savedata(filename, testlistcsv);
+				
+				debrief_test();
+			}
+		});
+		
+	}
+}
+//console.log(JSON.stringify(restudylist));
+
+function prepdata(data) {
+	var datacsv = "";
+	var labels = Object.keys(data); //grabs all the properties of data
+
+	for (n = 0; n < labels.length; n++){
+		datacsv = datacsv + labels[n] + ',';
+	}
+	datacsv = datacsv + '\n';
+	
+	let ntoloop = data[Object.keys(data)[0]].length;
+	for (n = 0; n < ntoloop; n++){
+		for (var i in data){
+			if (data.hasOwnProperty(i)){
+				datacsv = datacsv + data[i][n] + ','; //in "str" + num, num is converted to a string.
+			}
+		}
+		datacsv = datacsv + '\n';
+	}
+	
+	return datacsv;
+}
+
+function savedata(name, data){
+	$.ajax({
+	type: "POST",
+	url: "http://labs.psychology.illinois.edu/~asbenjam/Griffin/Learning/write_data.php",
+	data: {
+	"filename": name,
+	"filedata":  data// originally used JSON.stringify(data), but writes out new line characters. 
+	},
+	success: function(response){
+	console.log("SUBMITTED: " + response);
+	}})
+ 
+}
+
+</script>
+</html>

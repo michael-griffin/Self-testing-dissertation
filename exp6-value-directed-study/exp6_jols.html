@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>My experiment</title>
+	<script src="jspsych-6.0.2/jspsych.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-html-keyboard-response.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-html-keyboard-new.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-html-slider-response.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-html-slider-new.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-html-button-response.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-survey-text.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-survey-new.js"></script>
+	<script src="jspsych-6.0.2/plugins/jspsych-instructions.js"></script>
+	<link href="jspsych-6.0.2/css/jspsych.css" rel="stylesheet" type="text/css"></link>
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+</head>
+<body></body>
+
+<div id="daybutton">
+	<label><b>Is this the first or second day of the experiment?</b></label>
+	<label><input type="radio" name="day" value="1" id="dayone" onclick="dayoneclick()" /> Day 1</label>
+	<label><input type="radio" name="day" value="2" id="daytwo" onclick="daytwoclick()" /> Day 2</label>
+</div>
+
+<div id="IDfield">
+	Subject Number: <input type="text" id="subnum" value="">
+	<br><br>
+</div>
+
+<button onclick="gotoexp()">Continue</button>
+
+<div id="warning">
+	<p></p>
+</div>
+
+<script type="text/javascript" language = "javascript">
+document.getElementById("IDfield").style.visibility = "hidden";
+var subID; //must declare it globally, so that when the experiment runs it can still access.
+function dayoneclick() {
+	document.getElementById("IDfield").style.visibility = "hidden";
+}
+function daytwoclick() {
+	document.getElementById("IDfield").style.visibility = "visible";
+}
+
+function gotoexp() {
+	var days = document.getElementsByName('day');
+	var day;
+	for(var i = 0; i < days.length; i++){
+		if(days[i].checked){
+			day = days[i].value;
+		}
+	}
+	
+	subID = document.getElementById("subnum").value;
+	
+	if (day == 1){
+		start_exp();
+	} else if (day == 2 && (subID.length < 4 || subID.length > 4)){
+		document.getElementById("warning").innerHTML = 'Please enter a subject number that is 4 digits long.';
+		//start_exp();
+	} else if (day == 2 && subID.length == 4) {
+		readandcheck('subjects.txt'); //updates substring and subarray.
+		//After reading data, check if subject matches and enough time has passed.
+		//will have to get index of matching sub number. 		
+		//$.when(readData('subjects.txt')).then(checksub);
+	}
+}	
+
+//calls checksub. Figuring out how when works would be more elegant. 
+function readandcheck(name){
+	$.ajax({
+	type: "POST",
+	url: "http://labs.psychology.illinois.edu/~asbenjam/Griffin/Learning/read_data.php",
+	data: {
+	"filename": name
+	},
+	success: function(response){
+		var substring = response;
+		var numarray = substring.split(',').map(Number);
+		console.log("Subject Array is: " + numarray);
+		checksub(numarray);
+	}})
+}
+
+
+
+function checksub(subarray){
+	//Report subarray, which should be updated in readData and is required here.
+	console.log(subarray);
+
+	let subn = document.getElementById("subnum").value;
+	subn = Number(subn);
+	console.log('Subject N: ' + subn); //subn is still a string.
+	
+	//needed for findIndex function.
+	function subnmatch(asub){
+		return subn == asub;
+	}
+	let index = subarray.findIndex(subnmatch);
+	
+	//If you can't find subject, display warning message and exit.
+	if (index == -1) {
+		document.getElementById("warning").innerHTML = '<br>Unable to find that subject number. ' + 
+		'Please double check to make sure it was entered correctly, then refresh the page and try again. ' +
+		'<br>If you are still having problems, you can email the experimenter at ' + 
+		'<br>' + 'mgriffn2@illinois.edu';
+		return;
+	}
+	
+
+	let dayold = subarray[index+1];
+	let hoursold = subarray[index+2];
+
+	let ctime = new Date();
+	let daynew = ctime.getDay();
+	let hoursnew = ctime.getHours();
+	
+	let timediff = daynew - dayold;
+	if (timediff < 0) {
+		timediff = timediff + 7;
+	}
+	timediff = timediff * 24;
+	timediff = timediff + (hoursnew - hoursold);
+
+	//Actual Check
+	if (timediff < 18) {
+		let timetilgood = String(18 - timediff + 1);
+		document.getElementById("warning").innerHTML = '<br>To start part 2, at least 18 hours must have passed ' +
+		'since finishing part 1. You should be able to access part 2 in <br>' + 
+		'<b>' + timetilgood + '</b> hours.';
+	} else if (timediff > 40) {
+		document.getElementById("warning").innerHTML = '<br>You are no longer eligible to participate in part 2 ' + 
+		'because over 40 hours have passed since you completed part 1. ' +
+		'<br>If you think this message is in error, please email the experimenter at ' + 
+		'<br>' + 'mgriffn2@illinois.edu';
+	} else {
+		//Start the damn experiment.
+		start_exp();
+	}
+}
+
+</script>
+
+<script>
+function start_exp(){
+	/*A few pieces to learn here. General form of the experiment should be:
+	
+	#General idea: 
+	#Assign low vs. high point values to words. 1,2,3 v 10,11,12 brings it in line
+	#with Castel's procedure.  http://castel.psych.ucla.edu/papers/DTI%20selectivity%202018.PDF
+	
+	#BETWEEN subjects, either honor people's decisions or give them no choice.
+	#Force 50/50 again, for equal comparison. Yoked sounds a bit too complicated.
+	
+	#Main thing to do is set up sequence so that
+	#1. design differs by subject.
+	#2. Point values display below word first, then word appears.
+	
+	#procedure wise, still collecting JOL. Could display point-value after JOL is collected,
+	#but before practice decision is made?
+	
+	Still to add: Update restudylist/testlist so that it includes new variables (points/value). 
+	Test everything. Update instructions.
+	
+		
+	Day 2 unchanged.
+	
+	
+	*/
+	
+	var timeline = []; //used for instructions
+
+	//var timelinerestudy = []; //used for restudy phase, now initialized in run_restudy.
+	
+	var stimstyle = '<p style="color: black; font-size: 22px; ">'; //font-weight: bold; default text size is 20.
+	var instructstyle = '<div style="width: 800px;">' +
+		'<div style= "margin: 50px";>' +
+		'<div style="text-align: left;">';
+
+	//Trisha just entered wordlist raw. Ugly, especially since they're paired, but doable.
+	//new experiment reduces list from 40 items to 36, to have it match Castel's procedure. 
+	var word1list = ["chicken", "port", "prison", "rock", "replace", "link", "caring",
+	"biology", "copy", "process", "bullet", "mill", "anger", "visit", "capital", "shrink",
+	"nerve", "pea", "fan", "remind", "bacon", "bleach", "climax", "date", "bias", "calf",
+	"fee", "want", "need", "knock", "plant", "find", "smother", "pork", "glue", "grip"];
+	//"forest", "banner", "collect", "risk"];
+	var word2list = ["beet", "cinema", "loaf", "milk", "roach", "crisis", "skirt", "temper",
+	"bedroom", "joker", "walkway", "feast", "decay", "glove", "figure", "mafia", "bumper",
+	"bathtub", "feature", "foam", "feud", "ruin", "saucer", "laugh", "sirloin", "annoy",
+	"chowder", "ascent", "faucet", "otter", "worm", "clown", "surgery", "emperor", "force",
+	"beach"]; //, "knob", "glide", "loyalty", "zero"];
+	var pointslist = [1,2,3,10,11,12,1,2,3,10,11,12,1,2,3,10,11,12,
+	1,2,3,10,11,12,1,2,3,10,11,12,1,2,3,10,11,12];
+	var valuelist = [0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,1,1,1,
+	0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,1,1,1];
+	var days = document.getElementsByName('day');
+	var day;
+	for(var i = 0; i < days.length; i++){
+		if(days[i].checked){
+			day = days[i].value;
+		}
+	}
+
+	
+	var pilot = 1;
+	//var day = 1;
+
+	if (pilot == 1) {
+		var instructpause = 0;
+		var prestime = 1000;
+		var pointtime = 1000;
+		var ntrials = 6;
+		var nstudylists = 2;
+		var npraclists = 1;
+	} 
+	else {
+		var instructpause = 500;
+		var prestime = 3000;
+		var pointtime = 1000;
+		var ntrials = word1list.length;
+		var nstudylists = 3;
+		var npraclists = 1;
+	}
+
+
+	var zeroto = []; //used when shuffling order.
+	for (var n = 0; n < ntrials; n++){
+		zeroto.push(n);
+	}
+	var emptarr = Array.from({length: ntrials}); //used in restudy.
+
+
+	//Grabbed from stack overflow. 
+	function shuffle(array) {
+		for (var i = array.length - 1; i > 0; i--) {
+			var j = Math.floor(Math.random() * (i + 1));
+			var temp = array[i];
+			array[i] = array[j];
+			array[j] = temp;
+		}
+		return array; //could skip. As is, usage is a = shuffle(a);, without, would be just shuffle(a);
+	}
+
+	if (day == 1) {
+		var subn = Math.round(Math.random()*8999) + 1000; //Generate a random subject number that participants have to enter.
+		//var honor = subn%2; //If subn is odd, in the between subjects condition where they can choose what type of study.
+		
+		subID = String(subn);
+		console.log(subn);
+		//added in two field: points and value. Points is what's displayed, value is a simplified high/low, with 1 = high.
+		var studylist = {
+			word1: [],
+			word2: [],
+			points: [],
+			value: [],
+			trial: [],
+			list: [],
+			jol: [], //to be populated in the trial procedure
+			jolrt: [],
+			jolrtfirst: [], //when they first touch the slider.
+			choice: [],
+			choicert: []
+		}
+		
+		var ordershuffled = zeroto.slice();
+		for (m = 0; m < nstudylists; m++){
+			ordershuffled = shuffle(ordershuffled);
+		
+			for (n = 0; n < ordershuffled.length; n++){
+				let index = ordershuffled[n];
+				studylist.word1.push(word1list[index]);
+				studylist.word2.push(word2list[index]);
+				studylist.points.push(pointslist[index]);
+				studylist.value.push(valuelist[index]);
+				//JOL values are pushed in as trials are completed.
+			}
+		}
+		
+		
+		/*
+		//If doing a delayed JOL, push in one more 'list' of words.
+		ordershuffled = shuffle(ordershuffled);
+		for (n = 0; n < ordershuffled.length; n++){
+				let index = ordershuffled[n];
+				studylist.word1.push(word1list[index]);
+				studylist.word2.push(word2list[index]);
+				studylist.points.push(pointslist[index]);
+				studylist.value.push(valuelist[index]);
+		}
+		*/
+		
+		//instructions use a different plug in from trials. html-keyboard-new.
+		//This has an additional parameter: min_time, or the time that the stimulus stays on screen
+		//before a response is accepted.
+		//instructions
+		presscontinue = "<br><br><br>Press any key to continue.";
+		
+		var instructions_first = {
+			type: 'html-keyboard-new',
+			stimulus: instructstyle + 
+			"In this experiment, you will study a series of word pairs that you need to learn " +
+			"for an upcoming memory test. You will take the test when you return tomorrow. On the test, I'll give you the top " +
+			"word and your job is to remember the bottom word." +
+			
+			"<br><br>Each remembered word pair is worth a certain number of <u>points</u>, and your goal is to " + 
+			"try and maximize the amount of points earned on tomorrow's test. That is, it is more important to " +
+			"remember the word pairs that have high point values than those that low values." +
+			
+			"<br><br>After studying the list, you'll have an opportunity to get more practice on the words in those lists."+
+			presscontinue,
+			min_time: instructpause
+			
+		};
+		timeline.push(instructions_first);
+
+		var instructions_second = {
+			type: 'html-keyboard-new',
+			stimulus: instructstyle + 
+			"You will have three seconds to initially study each word pair. " +
+			"After studying each pair, you'll need to estimate how likely you are to remember " +
+			"the bottom word when given the top word on tomorrow's test." +
+			presscontinue,
+			min_time: instructpause
+		};
+		timeline.push(instructions_second);
+
+		var instructions_third = {
+			type: "html-keyboard-new",
+			stimulus: "Press any key when you're ready to begin the experiment.", //no CSS, want text-align centered.
+			min_time: instructpause
+		}
+		timeline.push(instructions_third);
+
+
+
+
+
+		// Stimulus is tricky. Need to display instructions, word-pair from trial, and JOL response getter thing.
+		//form is either one large var with the whole timeline + a reference to the array, or broken up into several variables for all three.
+		//For now, trying one large on assumption that we only need to collect one response.
+
+		var ctrial = 0;
+		var restudyleft = ntrials/2;
+		var testleft = ntrials/2;
+		
+		//Because I am bad at coding. html-keyboard-new seems to override the typical jsPsych.No_KEYS
+		//and response_end_trial: false behavior. So using keyboard response to display things for a fixed time.
+		//keyboard-new to display things for a minimum time.
+		
+		var pointdisp  = {
+			type: 'html-keyboard-response',
+			stimulus: ' ',
+			prompt: ' ',
+			choices: jsPsych.No_KEYS, //could comment out. Trial duration+prestime is enough.
+			trial_duration: pointtime,
+			response_ends_trial: false,
+			on_start: function(trial) {
+				if (studylist.points[ctrial] > 1){
+					trial.stimulus = stimstyle + '<b>' + studylist.points[ctrial] + ' Points</b>' +
+					'<br><br><br><br><br><br><br><br><br><br><br></p>';
+				} else {
+					trial.stimulus = stimstyle + '<b>' + studylist.points[ctrial] + ' Point</b>' +
+					'<br><br><br><br><br><br><br><br><br><br><br></p>';
+				}
+				//trial.prompt = stimstyle + 
+				//'<b>' + studylist.points[ctrial] + ' Points</b></p>';
+				//trial.stimulus = stimstyle + 
+				//studylist.word1[ctrial] + '<br><br>' + studylist.word2[ctrial] + '</p>';
+			}
+		}
+		//var studystyle = '<p style="color: black; font-size: 22px; position: fixed; top: 0; text-align: right;">'; //font-weight: bold; default text size is 20.
+		//var studystyle = '<p style="color: black; font-size: 22px; width: 50%; position: fixed; top: 25%; left: 50%; text-align: center;">';
+		
+		var studytrial = {
+			type: 'html-keyboard-response',
+			stimulus: ' ',
+			prompt: ' ',
+			choices: jsPsych.No_KEYS, //could comment out. Trial duration+prestime is enough.
+			trial_duration: prestime,
+			response_ends_trial: false,
+			on_start: function(trial) {
+				if (studylist.points[ctrial] > 1){
+					trial.stimulus = stimstyle + '<b>' + studylist.points[ctrial] + ' Points</b><br><br>' +
+					studylist.word1[ctrial] + '<br><br>' + studylist.word2[ctrial] + '<br><br><br><br><br><br><br></p>';				
+				} else {
+					trial.stimulus = stimstyle + '<b>' + studylist.points[ctrial] + ' Point</b><br><br>' +
+					studylist.word1[ctrial] + '<br><br>' + studylist.word2[ctrial] + '<br><br><br><br><br><br><br></p>';
+				}
+
+				//trial.prompt = stimstyle + 
+				//'<b>' + studylist.points[ctrial] + ' Points</b></p>';
+			},
+			on_finish: function(data){
+				//this used to be where one would push in -99 for jol, jolrt, etc. 
+				//Probably simpler to do so when setting up the trials below.
+				//ctrial = ctrial+1;
+			}
+			
+		}
+		
+
+		var joljudge = {
+			type: "html-slider-new",
+			stimulus: " ",
+			prompt: "<p>How likely are you to remember <br>this word on tomorrow's test?<br></p>",
+			labels: ['1', '100'],
+			min: 1, //default is from 0 to 100.
+			max: 100,
+			 //used to be How well did you learn this
+			on_start: function(trial) {
+				if (studylist.points[ctrial] > 1){
+					trial.stimulus = stimstyle + '<b>' + studylist.points[ctrial] + ' Points</b><br><br>' +
+					studylist.word1[ctrial] + '<br><br>' + studylist.word2[ctrial] + '</p>';				
+				} else{
+					trial.stimulus = stimstyle + '<b>' + studylist.points[ctrial] + ' Point</b><br><br>' +
+					studylist.word1[ctrial] + '<br><br>' + studylist.word2[ctrial] + '</p>';				
+				}
+				//trial.stimulus = stimstyle + '<b>' + studylist.points[ctrial] + ' Points</b><br><br>' +
+				//studylist.word1[ctrial] + '<br><br>' + studylist.word2[ctrial] + '</p>';
+			},
+			on_finish: function(data){
+				studylist.jol.push(Number(data.response));  
+				studylist.jolrt.push(data.rt/1000);
+				studylist.jolrtfirst.push(data.rtfirst/1000);
+				studylist.choicert.push(-99);
+				ctrial = ctrial+1; 
+			}
+		}
+		
+		
+		
+		var decideprac = {
+			type: "html-button-response",
+			stimulus: "Do you want to restudy or practice testing yourself on this pair later?" +
+			'<br><br>',
+			choices: ['restudy', 'test'],
+			prompt: "<br>you have " + restudyleft + " restudy and " + testleft + " self-test trials remaining",
+			on_start: function(decideprac){
+				decideprac.prompt = "<br>you have " + restudyleft + " restudy and " + testleft + " self-test trials remaining";
+				if (restudyleft > 0 && testleft > 0){
+				} else if (restudyleft==0){
+					decideprac.choices = ['test'];
+				} else if (testleft==0){
+					decideprac.choices = ['restudy'];
+				} else {
+					decideprac.choices = ['restudy', 'test', 'huh'];
+					console.log('uhoh');
+				}
+			},
+			on_finish: function(data){
+				studylist.choicert[ctrial] = data.rt/1000; //pushed in -99 during JOL judgment, this overwrites.
+
+				//Coding button a little more difficult, since 1st button will sometimes be restudy, sometimes test.
+				if (restudyleft > 0 && testleft > 0){
+					studylist.choice.push(Number(data.button_pressed));
+					restudyleft = restudyleft - (1 - data.button_pressed);
+					testleft = testleft - data.button_pressed;
+				} else if (restudyleft == 0){
+					studylist.choice.push(1); //test choice
+					testleft = testleft - 1;
+				} else if (testleft == 0){
+					studylist.choice.push(0); //restudy choice.
+					restudyleft = restudyleft - 1;
+				} else {
+					console.log('uhoh2');
+				}
+				//ctrial = ctrial+1;
+			}
+		}
+		
+		
+		//jsPsych.data.addDataToLastTrial({subject: subn, jol: jolresp, RTstart: startRT, RTend: endRT, trial: n});
+		var instructions_nextlist = {
+			type: "html-keyboard-new",
+			stimulus: instructstyle + 
+			"You will now have another opportunity to study each word pair. " +
+			presscontinue,
+			min_time: instructpause
+		}
+
+		var instructions_decide = {
+			type: "html-keyboard-new",
+			stimulus: instructstyle + 
+			"You will now have another opportunity to study each word pair. " + 
+			"This time, you will also get to choose how you will practice this word pair on the next list." +
+			
+			"<br><br>For each word pair, you can choose to restudy it or test yourself on it. If you choose " +
+			"to restudy it you'll see both words again, just like before. If you choose to test yourself on " +
+			"the pair, you will see the top word and have to remember the bottom word." +
+			
+			"<br><br>One more thing: you will have to restudy half of the pairs and test yourself on half of " +
+			"the pairs. There will be a running count for you at the bottom to help you keep track." +
+			presscontinue,
+			min_time: instructpause
+		}
+		
+		for (m = 1; m <= nstudylists; m++){
+			if (m == 1){
+				//no extra instructions
+			} else if (m > 1 && m < nstudylists) {
+				timeline.push(instructions_nextlist);
+			} else if (m == nstudylists) {
+				timeline.push(instructions_decide);
+			}
+			for (n = 1; n <= ntrials; n++){
+				studylist.trial.push(n);
+				studylist.list.push(m);
+				timeline.push(pointdisp);
+				timeline.push(studytrial);
+				timeline.push(joljudge);
+				if (m == nstudylists){
+					timeline.push(decideprac);
+				} else {
+					studylist.choice.push(-99);
+				}
+			}
+		}
+		
+		/*
+		for (n = 1; n <= ntrials; n++){
+			studylist.trial.push(n);
+			studylist.list.push(nstudylists+1);
+			timeline.push(decideprac);
+		}		
+		*/
+
+		//javascript's sort function doesn't immediately work on numbers..
+		//have to add this in.
+		function sortnum(a,b) {
+			return a - b;
+		}
+
+		//find where in an array a value shows up.
+		function getindexes(arr, val) {
+			var indexes = [], i;
+			for(i = 0; i < arr.length; i++)
+				if (arr[i] === val)
+					indexes.push(i);
+			return indexes;
+		}
+ 
+		//NEEDS TO BE A FUNCTION, SO THAT IT CAN BE CALLED ON_FINISH. Otherwise, jols won't be available yet.
+		function run_restudy(studylist){
+			
+			var timelinerestudy = [];
+			
+			var instructions = {
+				type: "html-keyboard-new",
+				stimulus: instructstyle + 
+				"The next practice phase is about to begin. " +
+				
+				"<br><br>You will restudy some of the pairs, and be tested on some of the pairs. The type of practice " +
+				"may or may not reflect the choices you made previously, but your job is still to learn the pairs as best " +
+				"as you can." +
+				
+				"<br><br>If you're tested on a pair and unsure of the answer, it's okay to guess. " +
+				"If you've tried but still can't remember the right word, you can enter SKIP " +
+				"to move onto the next word pair." +
+				presscontinue,
+				min_time: instructpause
+			}
+			timelinerestudy.push(instructions);
+			
+			//copying over objects is relatively hard (often stuck with pointers).
+			//Can either make a bunch of new variables (messy, but less prone to explosions)
+			//OR can try out a copy method. See:
+			//https://stackoverflow.com/questions/15020850/copy-constructors-and-defensive-copying
+			//http://www.javapractices.com/topic/TopicAction.do?Id=15
+			//BUT it sounds like the above
+			var recentlist = {
+				word1: emptarr.slice(),
+				word2: emptarr.slice(),
+				points: emptarr.slice(),
+				value: emptarr.slice(),
+				jol: emptarr.slice(),
+				jolrt: emptarr.slice(),
+				jolrtfirst: emptarr.slice(),
+				choice: emptarr.slice(),
+			};
+			
+			
+			var startslice = studylist.trial.length - ntrials;
+			var finishslice = studylist.trial.length;
+			
+			//var startslice = (nstudylists-1)*ntrials;
+			//var finishslice = nstudylists*ntrials;
+			for (var i in recentlist){
+				if (recentlist.hasOwnProperty(i) & studylist.hasOwnProperty(i)){
+					recentlist[i] = studylist[i].slice(startslice,finishslice);
+				}
+			}
+			var praccond = emptarr.slice();
+			
+			for (n = 0; n < ntrials; n++){
+				if (subn%2 == 1){
+					praccond[n] = recentlist.choice[n];
+				} else {
+					praccond[n] = 1 - recentlist.choice[n];
+				}
+			}
+			//console.log('Studylist:' + studylist);
+			//console.log(recentlist);
+			//console.log(praccond);
+			
+			///////////////
+			//RESTUDY PHASE
+
+			var restudylist = {
+				word1: [],
+				word2: [],
+				points: [],
+				value: [],
+				jol: [],
+				jolrt: [],
+				jolrtfirst: [],
+				trial: [],
+				list: [],
+				praccond: [],
+				choice: [],
+				hondis: [],
+				response: [], //elements will be pushed in. can't specify size ahead of time easily.
+				rt: [],
+				rtfirst: []
+			};
+
+			var ordershuffledtwo = zeroto.slice();
+			
+			for (m = 0; m < npraclists; m++){
+				ordershuffledtwo = shuffle(ordershuffledtwo);
+
+				for (n = 0; n < ntrials; n++){
+					let index = ordershuffledtwo[n];
+					restudylist.word1.push(recentlist.word1[index]);
+					restudylist.word2.push(recentlist.word2[index]);
+					restudylist.points.push(recentlist.points[index]);
+					restudylist.value.push(recentlist.value[index]);
+					restudylist.jol.push(recentlist.jol[index]);
+					restudylist.jolrt.push(recentlist.jolrt[index]);
+					restudylist.jolrtfirst.push(recentlist.jolrtfirst[index]);
+					restudylist.trial.push(n+1);
+					restudylist.list.push(m+1);
+					restudylist.praccond.push(praccond[index]);
+					restudylist.choice.push(recentlist.choice[index]);
+					let honored = 1 - Math.abs(praccond[index] - recentlist.choice[index]);
+					restudylist.hondis.push(honored);
+				}
+			}
+			console.log(restudylist);
+			
+			var trial = {};
+			for (m = 0; m < npraclists; m++){
+				
+				if (m > 0){
+					var instructions_nextpractice = {
+						type: "html-keyboard-new",
+						stimulus: instructstyle + 
+						"You will now have another opportunity to practice each word." +
+						presscontinue,
+						min_time: instructpause
+					}
+					timelinerestudy.push(instructions_nextpractice);
+				}
+				
+				for (n = 0; n < ntrials; n++) {
+					let wordindex = n+(ntrials*m);
+					let cond = restudylist.praccond[wordindex];
+					
+					if (cond == 0) {
+						let ctype = 'html-keyboard-response';
+
+						let cstim = restudylist.word1[wordindex] + "<br><br>" + restudylist.word2[wordindex];
+						trial = {
+							type: ctype,
+							stimulus: stimstyle + cstim + '</p>',
+							choices: jsPsych.NO_KEYS,
+							trial_duration: prestime,
+							response_ends_trials: false,
+							on_finish: function(data){
+								restudylist.response.push("-");
+								restudylist.rt.push(-99);
+								restudylist.rtfirst.push(-99);
+							}
+						}
+					} else {
+						let ctype = 'survey-new'; //survey new has been modified to add "autocomplete=off" to the input text field.
+						let cstim = restudylist.word1[wordindex];
+						trial = {
+							type: ctype,
+							disp: stimstyle + cstim + '</p>',
+							on_finish: function(data){
+								//survey text response adds additional characters such as Ques. #, etc. Below trims.
+								//let rawresponse = data.responses;
+								//rawresponse = rawresponse.slice(7, rawresponse.length-2); 
+								restudylist.response.push(data.response); 
+								restudylist.rt.push(data.rt/1000);
+								restudylist.rtfirst.push(data.rtfirst/1000);
+							}
+						}
+					}
+					timelinerestudy.push(trial);
+				}
+			}
+			
+			
+			jsPsych.init({
+				timeline: timelinerestudy,
+				on_finish: function(){
+					console.log('ID test1 run_restudy' + subID);
+					//console.log('ID test2 run_restudy' + document.getElementById("subnum").value);
+					
+					
+					var studylistcsv = prepdata(studylist);
+					//console.log(studylistcsv);
+
+					var filename = 'data/' + 'study_' + subID + '.txt';
+					savedata(filename, studylistcsv);
+					
+					
+					var restudylistcsv = prepdata(restudylist);
+					//console.log(restudylist);
+					//console.log(restudylistcsv);
+
+					var filename = 'data/' + 'restudy_' + subID + '.txt';
+					savedata(filename, restudylistcsv);
+					
+					var filename = 'subjects.txt';
+					var thedate = new Date();
+					var hours = thedate.getHours();
+					var today = thedate.getDay(); 
+					var datastring = String(subn + ',' + today + ',' + hours + ',');
+					savedata(filename, datastring);
+					
+					debrief_study(); //after saving, run debrief.
+				}
+			})
+		}
+
+		function debrief_study() {
+			var debrief = {
+				//Trisha did this with type: instructions. I'm not sure which would be easier to format.
+			
+				type: 'html-keyboard-new',
+				stimulus:[instructstyle + 
+				'The first day is complete!' +
+				
+				'<br>' + 
+				'<p style="font-size: 52px; text-align: center;">' + subn + '<br>' + 
+				'<p style="font-size: 26px; text-align: left;">' + 'This is your <b>Subject Number</b>. ' + 
+				'Please WRITE THIS DOWN. you will not be able to start Day 2 without it.' +
+				
+				'<br>' + '<p style="font-size: 20px; ">' +
+				'When you return for part 2 tomorrow, you will need to enter your Subject Number to begin. ' + 
+				'Part 2 will be accessed using the same link as today, ' +
+				'but when you initially load this page be sure to select Day 2.' +
+				'<br><br>' + 
+				
+				'Please copy and paste this sequence to Mechanical Turk in order to get credit.' +
+				'<br>'+'<p style="text-align: center; font-size: 20px;">' + subn + '_' + 'J9FN7' +
+				'<br><br>' +
+				
+				"It's safe to exit this window."
+				],
+				choices: jsPsych.NO_KEYS,
+			};
+			
+			jsPsych.init({
+				timeline: [debrief]
+			})
+		}
+
+
+		//jsPsych.data.displayData();
+		jsPsych.init({
+			timeline: timeline,
+			on_finish: function() {
+				console.log('Sub N: ' + subID);
+				console.log('finished study phase');
+				run_restudy(studylist);
+			}
+		});
+	}
+	else { //if day == 2
+		
+		
+		var ordershuffled = zeroto.slice();
+		ordershuffled = shuffle(ordershuffled);
+		
+		var testlist = {
+			word1: [],
+			word2: [],
+			points: [],
+			value: [],
+			jol: [],
+			jolrt: [],
+			jolrtfirst: [],
+			praccond: [],
+			response: [], //elements will be pushed in. can't specify size ahead of time easily.
+			rt: [],
+			rtfirst: []
+		};
+		
+		for (n = 0; n < ordershuffled.length; n++){
+			let index = ordershuffled[n];
+			testlist.word1.push(word1list[index]);
+			testlist.word2.push(word2list[index]);
+			testlist.points.push(pointslist[index]);
+			testlist.value.push(valuelist[index]);
+			testlist.jol.push(-9); //set default value so we can see it's overwritten when we tie day 1 and day 2 data.
+			testlist.jolrt.push(-9); //same as above.
+			testlist.jolrtfirst.push(-9);
+			testlist.praccond.push(-1);
+		}
+	
+		var instructions_daytwo = {
+			type: "html-keyboard-new",
+			stimulus: instructstyle + 
+			"Welcome to Day 2 of the experiment. Today, you'll be tested on the word pairs you learned " +
+			"previously. For each pair, you'll be given the left word, and need to type the right word." +
+			
+			"<br><br>If you're unsure of what the word was, it's okay to guess. If you've tried but still can't " + 
+			"remember the right word, you can enter SKIP to move onto the next word pair." +
+		
+			"<br><br>Press any key to begin the test.",
+			min_time: instructpause
+		};
+		timeline.push(instructions_daytwo);
+		
+		
+		for (n = 0; n < ntrials; n++){
+			let cstim = testlist.word1[n];
+			trial = {
+				type: 'survey-new',
+				disp: stimstyle + cstim + '</p>',
+				on_finish: function(data){
+					//survey text response adds additional characters such as Ques. #, etc. Below trims.
+					testlist.response.push(data.response); 
+					testlist.rt.push(data.rt/1000);
+					testlist.rtfirst.push(data.rtfirst/1000);
+				}
+			}
+			timeline.push(trial);
+		}
+		
+		function debrief_test() {
+			var debrief = {
+				//Trisha did this with type: instructions. I'm not sure which would be easier to format.
+			
+				type: 'html-keyboard-new',
+				stimulus:[instructstyle + 
+				'Thank you for your participation. <b>Please enter code ' + subID + '_' + 
+				'H2NE81 into Amazon Mechanical Turk for compensation</b>' +
+				
+				'<br><br>' + 
+				"In this experiment, you studied several lists of word pairs and then got to choose " + 
+				"how you'd restudy them, before taking a final memory test. " +
+				'Past research has found that testing actually leads to better memory than restudying; ' +
+				'however, when asked, people more often predict that restudying gives a greater memory boost.' +
+				
+				'This experiment looks at whether, when motivated to remember (when words have a high point-value) ' +
+				'people would choose to restudy more often. For some participants, these choices were dishonored; ' +
+				'Our hypothesis was that, for the high-value items, forcing self-testing might improve memory ' +
+				"even when it wasn't what you initially chose." +
+				
+				'<br><br>Thanks again for participating!' +
+				'<p>Once you have entered the code on MTurk, it is safe to exit this window.</p>'
+				],
+				choices: jsPsych.NO_KEYS,
+			};
+			
+			jsPsych.init({
+				timeline: [debrief]
+			})
+		}
+		
+		jsPsych.init({
+			timeline: timeline,
+			on_finish: function() {
+				console.log('finished test phase');
+				var testlistcsv = prepdata(testlist);
+				console.log(testlist);
+				console.log(testlistcsv);
+				
+				
+				
+				var filename = 'data/test_' + subID + '.txt';
+				savedata(filename, testlistcsv);
+				
+				debrief_test();
+			}
+		});
+		
+	}
+}
+//console.log(JSON.stringify(restudylist));
+
+function prepdata(data) {
+	var datacsv = "";
+	var labels = Object.keys(data); //grabs all the properties of data
+
+	for (n = 0; n < labels.length; n++){
+		datacsv = datacsv + labels[n] + ',';
+	}
+	datacsv = datacsv + '\n';
+	
+	let ntoloop = data[Object.keys(data)[0]].length;
+	for (n = 0; n < ntoloop; n++){
+		for (var i in data){
+			if (data.hasOwnProperty(i)){
+				datacsv = datacsv + data[i][n] + ','; //in "str" + num, num is converted to a string.
+			}
+		}
+		datacsv = datacsv + '\n';
+	}
+	
+	return datacsv;
+}
+
+function savedata(name, data){
+	$.ajax({
+	type: "POST",
+	url: "http://labs.psychology.illinois.edu/~asbenjam/Griffin/Learning/write_data.php",
+	data: {
+	"filename": name,
+	"filedata":  data// originally used JSON.stringify(data), but writes out new line characters. 
+	},
+	success: function(response){
+	console.log("SUBMITTED: " + response);
+	}})
+ 
+}
+
+</script>
+</html>
